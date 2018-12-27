@@ -1,0 +1,171 @@
+假定有CPP 源码文件（.cpp) 仅有如下内容
+1. 包含C/C++ 风格的注释： // 及 /**/
+2. 包含空白字符
+3. 只包含 #ifdef/#ifndef/#else/#endif/#define/#undef 这几个宏指令的应用
+4. #define 定义仅有如下定义情况:
+    #define identifier token-stringopt 
+5. 其中 token-stringopt 只有兼容如下几种C/C++指定基本类型常量表示内容：整型，浮点，布尔(true, false)，字符（忽略宽字符），字符串，及各上述基本类型组成的聚合。
+6. 聚合：结构体 或者 数组初始化，均可用聚合初始化形式{}表示，聚合类型可以多维（嵌套）.
+7. 除如上指定内容及适当的空格制表符换行等等等，不再有其他内容。不考虑字符映射及三元组序列， 不考虑行拼接
+
+注释，空白字符，常量，和字符串的类型定义请参考如下相关描述文档 
+    https://msdn.microsoft.com/zh-cn/library/cehk8f8b.aspx
+聚合初始化参考
+    https://msdn.microsoft.com/zh-cn/library/w7wd1177.aspx 中关于聚合初始化的表述
+预处理器相关参考 特别注意 "转换阶段" 与 "预处理器指令"
+    https://msdn.microsoft.com/zh-cn/library/79yewefw.aspx
+
+有如上特点的CPP源码文件，为了实现与Python脚本兼容对接，
+请基于Python 2.7.X 封装实现一个可重用的类，具体要求如下：
+1. 该类能读取 .cpp文件中的宏定义，并接收可变化的预定义宏串， 并根据两者，解析出当前所有的可用的宏定义。
+2. 可用宏定义可转为Python字典模式输出。 其中宏名转为字符串作为字典key, 若有与宏对应的常量定义转为对应python数据类型后作为字典的value。 类型对应关系见后表。若无任何常量则value为None
+2. 可用宏定义可再次导出成为只含有当前宏定义的CPP源文件。
+3. 请遵循CPP宏及常量类型的定义标准，确保相同常量变换后数值上保持一致，类型上与Python保持兼容（由于python转换过程中可能会损失掉C的具体类型信息，比如char 可能最终变为 int，具体表示方法也会有所变化，比如16进制最终表示为10进制， 故多次转换后能保持最终常量的值相等即可。 类型转换标准见“注意”）
+4. 只允许使用Python内置模块（如sys、math）和string模块，不允许使用其他标准模块及任何第三方开发库（包括但不限于re），不要使用 evel/excec 懒人解析， 不要使用copy；deepcopy等懒人复制。
+5. 独立完成作业，并附带测试代码及一份简短的模块使用说明
+
+注意：
+CPP基本类型常量与 Python对应关系表：
+
+    C/CPP源类型              			转为Python内置类型                				由Python内类型转回C/CPP的表示
+    C整数常量             				python int/long
+									(int/long 由python环境自动确定)         			int/unsigned int 十进制
+    C浮点常量             				python float                     					double
+    C字符常量(忽略宽字符)   			python int/long 按小端转换        				  int/unsigned int 十进制
+    C字符串                				宽字符串 转为 unicode              					宽字符串
+										普通字符串 转为 str               					普通字符串
+    聚合                				python tuple 类型                  					聚合
+    布尔类型             				python 布尔类型（True, False）     					布尔（ture/false)
+	
+
+
+全部字符串都是ANSI编码
+
+基本要求：
+提交Python代码文件名为PyMacroParser.py, 测试代码和文档可以打一个包作为第二个附件提交
+PyMacroParser.py 中包含一个class，类名为PyMacroParser，类中包含以下方法：
+1. load(self, f)  从指定文件中读取CPP宏定义，存为python内部数据，以备进一步解析使用。 f为文件路径，文件操作失败抛出异常；
+无返回值。若在初步解析中遇到宏定义格式错误 或 常量类型数据定义错误应该抛出异常。
+2. preDefine(self, s)  输入一堆预定义宏名串，宏名与宏名之间以”;” 分割。 比如串"mcname1;mcname2"相当于把
+    #define mcname1
+    #define mcname2
+加在了CPP宏数据的最前面。
+而空串"" 表示没有任何预定义宏。 显然，预定义宏会影响对CPP文件数据内的可用宏解析。 
+3. preDefine函数可被反复调用，每次调用自动清理掉之前的预定义宏序列。 preDefine 与 load的CPP宏定义数据，一起决定最终可用的宏。
+4. dumpDict(self) 返回一个dict， 结合类中存储的CPP宏定义与预定义的宏序列，解析输出所有的可用宏到一个字典，其中宏名转为字符串后作为字典的key,  若有与宏名对应的常量转为python数据对象，无常量则存为None, 注意不要返回类中内置的对象的引用。  解析过程若遇到宏定义格式错误 或 常量类型数据定义错误应该抛出异常；
+5. dump(self, f) 结合类中的CPP宏定义数据与预定义宏序列，解析输出所有可用宏存储到新的CPP源文件，f为CPP文件路径，文件若存在则覆盖，文件操作失败抛出异常。 若遇到宏定义格式错误 或 常量类型数据定义错误应该抛出异常。 注意，转换后的常量数据表示应与Python对应类型兼容， 所以常量类型的长度存储信息可能丢失（例如 short 转为 int; float 转为 double 等）, 允许特别表示方法信息丢失（例如原本16进制 统一变成10进制表示等）。 导出宏的顺序不做特别要求。
+
+测试方法
+假设源文件 a.cpp 中有如下内容
+#ifndef MCTEST
+#define MCTEST
+
+#ifdef MC1
+
+#define data1 0x20
+/*cmment start*/#define /*this is comment*/ data2 2.5f
+#define date3 L"this is a data"
+#define data4 true
+
+
+#ifdef MC2
+
+#define data5 'a'
+#define data6 { {2.0, "abc"}, {1.5, "def"}, {5.6f, "7.2"}} // 浮点与字符串组成的结构体初始化聚合， 再进一步聚合组成了数组
+
+#else
+
+#define data5 {5.0, 7.5, 3.8}
+#define data6 'c'
+
+#endif //end MC2
+
+
+#else
+
+#define data1 1.0f  /* this is float
+may be changed
+*/
+#define data2 2
+#define date3  false
+#define data4 "this is a data"
+
+
+#ifdef MC2
+
+#define data5 'B'
+#define data6 {1, 6, 3}
+#define data7 0xa
+
+#else
+
+#define data5 'D'
+#define data6 {1, 6}
+
+#endif //end MC2
+
+#endif //MC1
+
+#ifdef MC2
+#undef MC2
+#endif
+
+#endif // !MC_TEST
+
+
+python 测试代码：
+a1 = PyMacroParser()
+a2 = PyMacroParser()
+a1.load("a.cpp")
+filename = "b.cpp"
+a1.dump(filename) #没有预定义宏的情况下，dump cpp
+a2.load(filename)
+a2.dumpDict()
+a1.preDefine("MC1;MC2") #指定预定义宏，再dump
+a1.dumpDict()
+a1.dump("c.cpp")
+
+则b.cpp输出
+#define data1 1.0 //浮点精度信息消失，统一转成了double 正式输出没有这个注释
+#define data2 2
+#define date3 false
+#define data4 "this is a data"
+#define data5 68  //注意：这里本是'D' 转换后成为整型十进制表示，正式输出没有这个注释
+#define data6 {1, 6}
+#define MCTEST //空宏，但是被定义了, 正式输出没有这个注释
+
+a2.dump字典
+{
+    "data1" : 1.0,
+    "data2" : 2,
+    "data3" : False
+    "data4" : "this is a data",
+    "data5" : 68,
+    "data6" : (1, 6),
+    "MCTEST" : None, #空宏，但被定义了。 正式输出没有这个注释
+}
+
+a1.dump字典：
+{
+    "data1" : 32,
+    "data2" : 2.5,  #2.5f的float标记消失，正式输出没有这个注释
+    "data3" : u"this is a data", #宽字符串成为 unicode 正式输出没有这个注释
+    "data4" : True,
+    "data5" : 97, #注意 这里是'a'转int。 正式输出没有这个注释
+    "data6" : ((2.0, "abc"), (1.5, "def"), (5.6, "7.2")) , #python数据对象与源数据类型按规则对应即可， 正式输出没有这个注释
+    "MC1" : None, #预定义的空宏，而MC2最终被undef了，所以不存在MC2
+    "MCTEST" : None,
+}
+
+c.cpp 输出
+#define data1 32        //16进制表示消失。 正式输出没有这个注释
+#define data2 2.5
+#define date3 L"this is a data" //unicode 转回宽字符 正式输出没有这个注释
+#define data4 true
+#define data5 97    //'a', 正式输出没有这个注释
+#define data6 {{2.0, "abc"}, {1.5, "def"}, {5.6, "7.2"}} #tuple转回聚合， 正式输出没有这个注释
+#define MC1
+#define MCTEST
+
+如上测试代码并未覆盖所有差异情况，具体细节请参考前述参考文档
+提交平台的所有测试案例源文件均保证在VS2017/VS2015上编译通过， 同学们开发时可自己配置测试环境，编写测试用例。
